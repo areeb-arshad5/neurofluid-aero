@@ -97,8 +97,8 @@ definition - defined once in `data_spec.md` and never redefined ad hoc.
 
 ## Current status
 Phase 1 (data generation) done except the ANSYS tier; Stage 1 prototype
-trained. As of 2026-10-11 (after the overnight run on branch
-`overnight-2026-10-11`, local, not pushed):
+trained. As of 2026-10-11 (the overnight run; branch `overnight-2026-10-11`
+was merged into `main` and pushed on 2026-10-13):
 - DONE: airfoil geometry (500 airfoils from 15 real UIUC baselines), XFOIL
   install + validation, batch XFOIL (7,500 cases, 94.33% converged), XFOIL data
   QA (0 flags), the 64x64 grid (domain x -0.25..1.25, y -0.75..0.75, defined in

@@ -477,6 +477,25 @@ Checks (all pass): each airfoil exactly once, no held-out family in
 train/val/test, every other family in all three, seed reproducible, and a
 deliberately leaked airfoil is detected.
 
+### All-families split (`data_generation/splits_all_families.csv`)
+For the retrained final Stage 1 model and for active selection, where every
+family must be seen in training. Made with
+`python data_generation/make_splits.py --n_held_out 0 --out data_generation/splits_all_families.csv`
+(seed 42). Same columns as `splits.csv`; there is no `test_unseen_family`.
+Each of the 15 families is split 80/10/10 by airfoil:
+
+| split | airfoils | converged cases |
+|---|---|---|
+| train | 410 | 5,802 |
+| val | 45 | 636 |
+| test | 45 | 637 |
+
+`splits.csv` is unchanged (the default mode still reproduces it byte for byte),
+because the earlier 64x64 results depend on it. With no family held out, the
+only honest "never trained on" airfoils are the val and test ones, so an
+all-families model cannot measure unseen-family error; that needs the original
+split or a leave-one-family-out run.
+
 ## Phase 1, classical-ML baselines (`data_generation/baselines_classical.py`)
 Predict CL, CD, CM from the 10 CST coefficients + 2 trailing-edge offsets +
 α. Trained on `train` only, no tuning. Full tables in
