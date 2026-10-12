@@ -39,7 +39,8 @@ def cl_from_cp_torch(surf_xy: torch.Tensor, cp: torch.Tensor, alpha_deg: torch.T
 
 
 class Stage1Data:
-    def __init__(self, device: str | torch.device = "cpu"):
+    def __init__(self, device: str | torch.device = "cpu", splits_file: str | None = None):
+        """splits_file: CSV with airfoil_id, split (default data_generation/splits.csv)."""
         self.device = torch.device(device)
         g = np.load(os.path.join(DG, "grids", "airfoil_grids.npz"), allow_pickle=False)
         ids = [str(a) for a in g["airfoil_id"]]
@@ -50,7 +51,7 @@ class Stage1Data:
         self.yg = torch.from_numpy(g["y"]).float().to(self.device)
         self.re_value = ge.re_channel_value(RE)
 
-        with open(os.path.join(DG, "splits.csv"), newline="") as f:
+        with open(splits_file or os.path.join(DG, "splits.csv"), newline="") as f:
             split_of = {r["airfoil_id"]: r["split"] for r in csv.DictReader(f)}
         with open(os.path.join(DG, "airfoil_index.csv"), newline="") as f:
             self.baseline = {r["airfoil_id"]: r["baseline"] for r in csv.DictReader(f)}

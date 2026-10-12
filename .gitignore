@@ -14,3 +14,5 @@ data_generation/xfoil_data/cp/
 # Regenerable artifacts (seconds to minutes from committed code)
 data_generation/grids/*.npz
 overnight/checkpoints/
+overnight/all_families/checkpoints/
+overnight/all_families/*.err

@@ -30,14 +30,15 @@ VAL_FRAC = 0.10
 TEST_FRAC = 0.10
 
 
-def make_splits(index_rows, converged, seed: int):
+def make_splits(index_rows, converged, seed: int, n_held_out: int = N_HELD_OUT_FAMILIES):
     rng = np.random.default_rng(seed)
     by_family = defaultdict(list)
     for r in index_rows:
         by_family[r["baseline"]].append(r["airfoil_id"])
 
     families = sorted(by_family)
-    held_out = sorted(rng.choice(families, size=N_HELD_OUT_FAMILIES, replace=False).tolist())
+    held_out = (sorted(rng.choice(families, size=n_held_out, replace=False).tolist())
+                if n_held_out > 0 else [])
 
     assign = {}
     for fam in families:
@@ -59,7 +60,7 @@ def make_splits(index_rows, converged, seed: int):
     return rows, held_out
 
 
-def run_checks(rows, held_out, index_rows, seed, converged) -> bool:
+def run_checks(rows, held_out, index_rows, seed, converged, n_held_out=N_HELD_OUT_FAMILIES) -> bool:
     """Known-good properties, plus a known-bad detector for leakage."""
     ok = True
 
@@ -81,22 +82,34 @@ def run_checks(rows, held_out, index_rows, seed, converged) -> bool:
           all(not (fam_split[f] & {"train", "val", "test"}) for f in held_out))
     check("every other family appears in train, val and test",
           all(fam_split[f] == {"train", "val", "test"} for f in fam_split if f not in held_out))
-    again, _ = make_splits(index_rows, converged, seed)
+    again, _ = make_splits(index_rows, converged, seed, n_held_out)
     check("same seed reproduces the identical split", again == rows)
-    other, _ = make_splits(index_rows, converged, seed + 1)
+    other, _ = make_splits(index_rows, converged, seed + 1, n_held_out)
     check("a different seed changes the split", other != rows)
 
-    # known-bad: the leakage detector must catch a deliberately leaked family
-    bad = [dict(r) for r in rows]
-    for r in bad:
-        if r["baseline"] == held_out[0]:
-            r["split"] = "train"
-            break
-    leak = {r["baseline"]: set() for r in bad}
-    for r in bad:
-        leak[r["baseline"]].add(r["split"])
-    caught = leak[held_out[0]] != {"test_unseen_family"}
-    check("known-bad: a leaked held-out airfoil is detected", caught)
+    if held_out:
+        # known-bad: the leakage detector must catch a deliberately leaked family
+        bad = [dict(r) for r in rows]
+        for r in bad:
+            if r["baseline"] == held_out[0]:
+                r["split"] = "train"
+                break
+        leak = {r["baseline"]: set() for r in bad}
+        for r in bad:
+            leak[r["baseline"]].add(r["split"])
+        caught = leak[held_out[0]] != {"test_unseen_family"}
+        check("known-bad: a leaked held-out airfoil is detected", caught)
+    else:
+        check("no family is held out (all families are seen in training)",
+              not any(r["split"] == "test_unseen_family" for r in rows))
+        # known-bad: dropping every val airfoil of one family must be detected
+        fam = rows[0]["baseline"]
+        bad_splits = defaultdict(set)
+        for r in rows:
+            if not (r["baseline"] == fam and r["split"] == "val"):
+                bad_splits[r["baseline"]].add(r["split"])
+        check("known-bad: a family missing from val is detected",
+              bad_splits[fam] != {"train", "val", "test"})
     return ok
 
 
@@ -107,6 +120,9 @@ def main() -> int:
     p.add_argument("--index_csv", default=os.path.join(HERE, "airfoil_index.csv"))
     p.add_argument("--status_csv", default=os.path.join(HERE, "xfoil_data", "status.csv"))
     p.add_argument("--out", default=os.path.join(HERE, "splits.csv"))
+    p.add_argument("--n_held_out", type=int, default=N_HELD_OUT_FAMILIES,
+                   help="whole families held out as test_unseen_family (default 2). "
+                        "0 = all families are seen (use with --out splits_all_families.csv)")
     args = p.parse_args()
 
     with open(args.index_csv, newline="") as f:
@@ -117,7 +133,7 @@ def main() -> int:
             if r["status"] == "converged":
                 converged[r["airfoil_id"]] += 1
 
-    rows, held_out = make_splits(index_rows, converged, args.seed)
+    rows, held_out = make_splits(index_rows, converged, args.seed, args.n_held_out)
     with open(args.out, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["airfoil_id", "baseline", "split", "n_converged"])
         w.writeheader()
@@ -135,7 +151,7 @@ def main() -> int:
     print(f"\nairfoils with no converged case (no training data): {zero}\n")
 
     print("Checks:")
-    return 0 if run_checks(rows, held_out, index_rows, args.seed, converged) else 1
+    return 0 if run_checks(rows, held_out, index_rows, args.seed, converged, args.n_held_out) else 1
 
 
 if __name__ == "__main__":

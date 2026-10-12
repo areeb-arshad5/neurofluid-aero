@@ -65,7 +65,42 @@ def metrics(net, data, idx):
             "cl_mae": float(cl_err.abs().mean())}
 
 
+def free_ram_gb() -> float:
+    """Free physical RAM in GB (Windows). Returns inf where it cannot be read."""
+    try:
+        import ctypes
+
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                        ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                        ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                        ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+        m = MEMORYSTATUSEX()
+        m.dwLength = ctypes.sizeof(m)
+        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+        return m.ullAvailPhys / 2 ** 30
+    except Exception:
+        return float("inf")
+
+
+def wait_for_ram(min_gb: float) -> float:
+    """Block (checking every 30 s) while free RAM is below min_gb, so a heavy job
+    on the same laptop (Fluent) never gets starved. Returns the seconds paused."""
+    t = time.time()
+    announced = False
+    while free_ram_gb() < min_gb:
+        if not announced:
+            print(f"PAUSED: free RAM {free_ram_gb():.2f} GB < {min_gb:g} GB, waiting", flush=True)
+            announced = True
+        time.sleep(30)
+    if announced:
+        print(f"RESUMED after {(time.time() - t) / 60:.1f} min", flush=True)
+    return time.time() - t if announced else 0.0
+
+
 def main() -> int:
+    global OUT
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--seed", type=int, default=42)
@@ -79,13 +114,24 @@ def main() -> int:
     p.add_argument("--time_cap_min", type=float, default=45.0)
     p.add_argument("--tag", default="", help="suffix for every output file (e.g. s43), "
                    "so extra-seed runs never overwrite the main run")
+    p.add_argument("--splits", default="", help="splits CSV (default data_generation/splits.csv)")
+    p.add_argument("--out_dir", default="", help="output folder (default overnight/)")
+    p.add_argument("--threads", type=int, default=2, help="CPU threads (keep low on a shared laptop)")
+    p.add_argument("--min_free_gb", type=float, default=3.0,
+                   help="pause while free RAM is below this many GB (0 disables)")
     args = p.parse_args()
     sfx = f"_{args.tag}" if args.tag else ""
+    if args.out_dir:
+        OUT = args.out_dir
+    torch.set_num_threads(args.threads)
 
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    data = Stage1Data(device)
+    if args.min_free_gb > 0:
+        wait_for_ram(args.min_free_gb)
+    data = Stage1Data(device, args.splits or None)
+    eval_splits = [s for s in SPLIT_NAMES[1:] if len(data.indices(s)) > 0]
     net = fno.Stage1Net(width=args.width, modes=args.modes).to(device)
     opt = torch.optim.AdamW(net.parameters(), lr=args.lr, weight_decay=args.wd)
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=8, min_lr=1e-5)
@@ -100,8 +146,11 @@ def main() -> int:
 
     log, best, best_ep, stale = [], float("inf"), -1, 0
     t0 = time.time()
+    paused_s = 0.0  # time spent waiting for RAM; not counted against the time cap
     reason = "max epochs"
     for ep in range(1, args.epochs + 1):
+        if args.min_free_gb > 0:
+            paused_s += wait_for_ram(args.min_free_gb)
         net.train()
         perm = tr[torch.randperm(len(tr), generator=gen).to(device)]
         tot, nb = 0.0, 0
@@ -117,7 +166,7 @@ def main() -> int:
         sched.step(v["cp_rmse"])
         row = {"epoch": ep, "train_rmse": (tot / nb) ** 0.5, "val_cp_rmse": v["cp_rmse"],
                "val_cl_rmse": v["cl_rmse"], "lr": opt.param_groups[0]["lr"],
-               "minutes": (time.time() - t0) / 60}
+               "minutes": (time.time() - t0 - paused_s) / 60}
         log.append(row)
         if v["cp_rmse"] < best:
             best, best_ep, stale = v["cp_rmse"], ep, 0
@@ -131,10 +180,10 @@ def main() -> int:
         if stale >= args.patience:
             reason = f"early stop: no val improvement for {args.patience} epochs"
             break
-        if (time.time() - t0) / 60 >= args.time_cap_min:
+        if (time.time() - t0 - paused_s) / 60 >= args.time_cap_min:
             reason = f"time cap {args.time_cap_min:g} min"
             break
-    minutes = (time.time() - t0) / 60
+    minutes = (time.time() - t0 - paused_s) / 60
     print(f"stopped after {len(log)} epochs, {minutes:.1f} min: {reason}; best val Cp RMSE {best:.4f} @ epoch {best_ep}",
           flush=True)
 
@@ -145,15 +194,16 @@ def main() -> int:
 
     # ---- final evaluation with the best-on-val checkpoint ----
     net.load_state_dict(torch.load(ckpt, map_location=device))
-    results = {s: metrics(net, data, data.indices(s)) for s in ["train"] + SPLIT_NAMES[1:]}
+    results = {s: metrics(net, data, data.indices(s)) for s in ["train"] + eval_splits}
     # trivial reference: predict the mean Cp curve of the training set
     tr_mean = data.case_cp[tr].mean(dim=0, keepdim=True)
-    for s in ["val", "test", "test_unseen_family"]:
+    for s in eval_splits:
         idx = data.indices(s)
         results[s]["cp_rmse_mean_curve_baseline"] = float(
             (data.case_cp[idx] - tr_mean).pow(2).mean().sqrt())
     summary = {"seed": args.seed, "epochs_run": len(log), "best_epoch": best_ep,
-               "stop_reason": reason, "minutes": minutes,
+               "stop_reason": reason, "minutes": minutes, "paused_minutes": paused_s / 60,
+               "splits_file": args.splits or "data_generation/splits.csv",
                "params": fno.count_parameters(net), "results": results}
     with open(os.path.join(OUT, f"stage1_results{sfx}.json"), "w") as f:
         json.dump(summary, f, indent=2)
@@ -163,7 +213,7 @@ def main() -> int:
           f"best validation epoch {best_ep}. {summary['params']:,} parameters.", "",
           "| split | cases | Cp RMSE | Cp relative L2 | CL RMSE (from Cp) | CL R2 | Cp RMSE of a mean-curve guess |",
           "|---|---|---|---|---|---|---|"]
-    for s in ["train", "val", "test", "test_unseen_family"]:
+    for s in ["train"] + eval_splits:
         r = results[s]
         md.append(f"| {s} | {r['n']} | {r['cp_rmse']:.4f} | {r['cp_rel_l2']:.4f} | "
                   f"{r['cl_rmse']:.4f} | {r['cl_r2']:.4f} | "
@@ -206,8 +256,9 @@ def main() -> int:
     ax[1].grid(alpha=0.3)
     fig.tight_layout(); fig.savefig(os.path.join(OUT, f"stage1_curves{sfx}.png"), dpi=130); plt.close(fig)
 
-    fig, axes = plt.subplots(2, 3, figsize=(15, 7))
-    for row_i, s in enumerate(["test", "test_unseen_family"]):
+    ex_splits = [s for s in ["test", "test_unseen_family"] if s in eval_splits]
+    fig, axes = plt.subplots(len(ex_splits), 3, figsize=(15, 3.5 * len(ex_splits)), squeeze=False)
+    for row_i, s in enumerate(ex_splits):
         idx = data.indices(s)
         e = (pred[idx] - data.case_cp[idx]).pow(2).mean(dim=1).sqrt()
         order = torch.argsort(e)
