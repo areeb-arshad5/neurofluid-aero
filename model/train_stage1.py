@@ -84,19 +84,32 @@ def free_ram_gb() -> float:
         return float("inf")
 
 
-def wait_for_ram(min_gb: float) -> float:
-    """Block (checking every 30 s) while free RAM is below min_gb, so a heavy job
-    on the same laptop (Fluent) never gets starved. Returns the seconds paused."""
+def wait_for_ram(min_gb: float, max_wait_s: float = 0.0):
+    """Block while free RAM is below min_gb, so a heavy job on the same laptop
+    (Fluent) never gets starved. Returns (seconds paused, gave_up). With
+    max_wait_s > 0 it gives up after that long (gave_up=True) so the caller can
+    save its state and exit, releasing this process's own RAM instead of holding it."""
     t = time.time()
     announced = False
     while free_ram_gb() < min_gb:
         if not announced:
             print(f"PAUSED: free RAM {free_ram_gb():.2f} GB < {min_gb:g} GB, waiting", flush=True)
             announced = True
-        time.sleep(30)
+        if max_wait_s > 0 and time.time() - t >= max_wait_s:
+            print(f"GIVING UP after {(time.time() - t) / 60:.1f} min of low RAM: saving state and "
+                  f"exiting (code 75) to release this process's memory", flush=True)
+            return time.time() - t, True
+        time.sleep(15 if max_wait_s > 0 else 30)
     if announced:
         print(f"RESUMED after {(time.time() - t) / 60:.1f} min", flush=True)
-    return time.time() - t if announced else 0.0
+    return (time.time() - t if announced else 0.0), False
+
+
+def save_state(path: str, **state) -> None:
+    """Atomic write so an exit or crash mid-save never leaves a half-written file."""
+    tmp = path + ".tmp"
+    torch.save(state, tmp)
+    os.replace(tmp, path)
 
 
 def main() -> int:
@@ -119,6 +132,14 @@ def main() -> int:
     p.add_argument("--threads", type=int, default=2, help="CPU threads (keep low on a shared laptop)")
     p.add_argument("--min_free_gb", type=float, default=3.0,
                    help="pause while free RAM is below this many GB (0 disables)")
+    p.add_argument("--max_pause_s", type=float, default=0.0,
+                   help="if > 0, after pausing this long for RAM, save state and exit with code 75 "
+                        "(releases this process's memory); rerun with --resume to continue")
+    p.add_argument("--resume", action="store_true",
+                   help="continue from the last saved epoch if a resume state exists")
+    p.add_argument("--debug_exit_after", type=int, default=0,
+                   help="TEST ONLY: save state and exit with code 75 after this many epochs, "
+                        "to check that --resume reproduces an uninterrupted run")
     args = p.parse_args()
     sfx = f"_{args.tag}" if args.tag else ""
     if args.out_dir:
@@ -129,7 +150,9 @@ def main() -> int:
     np.random.seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     if args.min_free_gb > 0:
-        wait_for_ram(args.min_free_gb)
+        _, gave_up = wait_for_ram(args.min_free_gb, args.max_pause_s)
+        if gave_up:
+            return 75
     data = Stage1Data(device, args.splits or None)
     eval_splits = [s for s in SPLIT_NAMES[1:] if len(data.indices(s)) > 0]
     net = fno.Stage1Net(width=args.width, modes=args.modes).to(device)
@@ -144,13 +167,41 @@ def main() -> int:
     ckpt = os.path.join(OUT, "checkpoints", f"stage1_best{sfx}.pt")
     gen = torch.Generator(device="cpu").manual_seed(args.seed)
 
+    state_path = os.path.join(OUT, "checkpoints", f"stage1_resume{sfx}.pt")
     log, best, best_ep, stale = [], float("inf"), -1, 0
+    start_ep = 1
+    paused_prev_s = active_prev_s = 0.0   # carried over from an earlier process when resuming
+    if args.resume and os.path.exists(state_path):
+        st = torch.load(state_path, map_location="cpu", weights_only=False)
+        net.load_state_dict(st["net"])
+        opt.load_state_dict(st["opt"])
+        sched.load_state_dict(st["sched"])
+        gen.set_state(st["gen"].cpu())
+        log, best, best_ep, stale = st["log"], st["best"], st["best_ep"], st["stale"]
+        paused_prev_s, active_prev_s = st["paused_s"], st["active_s"]
+        start_ep = st["epoch"] + 1
+        print(f"RESUMED from saved state after epoch {st['epoch']} "
+              f"({active_prev_s / 60:.1f} active min so far)", flush=True)
     t0 = time.time()
-    paused_s = 0.0  # time spent waiting for RAM; not counted against the time cap
+    paused_now_s = 0.0  # time spent waiting for RAM in THIS process; not counted against the time cap
+
+    def active_s() -> float:
+        return active_prev_s + time.time() - t0 - paused_now_s
+
+    def snapshot(done_epoch: int) -> None:
+        save_state(state_path, epoch=done_epoch, net=net.state_dict(), opt=opt.state_dict(),
+                   sched=sched.state_dict(), gen=gen.get_state(), log=log, best=best,
+                   best_ep=best_ep, stale=stale, paused_s=paused_prev_s + paused_now_s,
+                   active_s=active_s())
+
     reason = "max epochs"
-    for ep in range(1, args.epochs + 1):
+    for ep in range(start_ep, args.epochs + 1):
         if args.min_free_gb > 0:
-            paused_s += wait_for_ram(args.min_free_gb)
+            waited, gave_up = wait_for_ram(args.min_free_gb, args.max_pause_s)
+            paused_now_s += waited
+            if gave_up:
+                snapshot(ep - 1)
+                return 75
         net.train()
         perm = tr[torch.randperm(len(tr), generator=gen).to(device)]
         tot, nb = 0.0, 0
@@ -166,13 +217,17 @@ def main() -> int:
         sched.step(v["cp_rmse"])
         row = {"epoch": ep, "train_rmse": (tot / nb) ** 0.5, "val_cp_rmse": v["cp_rmse"],
                "val_cl_rmse": v["cl_rmse"], "lr": opt.param_groups[0]["lr"],
-               "minutes": (time.time() - t0 - paused_s) / 60}
+               "minutes": active_s() / 60}
         log.append(row)
         if v["cp_rmse"] < best:
             best, best_ep, stale = v["cp_rmse"], ep, 0
             torch.save(net.state_dict(), ckpt)
         else:
             stale += 1
+        snapshot(ep)
+        if args.debug_exit_after and ep >= args.debug_exit_after:
+            print(f"DEBUG: exiting after epoch {ep} with state saved", flush=True)
+            return 75
         if ep == 1 or ep % 10 == 0:
             print(f"ep {ep:3d}  train {row['train_rmse']:.4f}  val Cp RMSE {v['cp_rmse']:.4f}  "
                   f"val CL RMSE {v['cl_rmse']:.4f}  lr {row['lr']:.1e}  {row['minutes']:.1f} min "
@@ -180,10 +235,10 @@ def main() -> int:
         if stale >= args.patience:
             reason = f"early stop: no val improvement for {args.patience} epochs"
             break
-        if (time.time() - t0 - paused_s) / 60 >= args.time_cap_min:
+        if active_s() / 60 >= args.time_cap_min:
             reason = f"time cap {args.time_cap_min:g} min"
             break
-    minutes = (time.time() - t0 - paused_s) / 60
+    minutes = active_s() / 60
     print(f"stopped after {len(log)} epochs, {minutes:.1f} min: {reason}; best val Cp RMSE {best:.4f} @ epoch {best_ep}",
           flush=True)
 
@@ -202,7 +257,8 @@ def main() -> int:
         results[s]["cp_rmse_mean_curve_baseline"] = float(
             (data.case_cp[idx] - tr_mean).pow(2).mean().sqrt())
     summary = {"seed": args.seed, "epochs_run": len(log), "best_epoch": best_ep,
-               "stop_reason": reason, "minutes": minutes, "paused_minutes": paused_s / 60,
+               "stop_reason": reason, "minutes": minutes,
+               "paused_minutes": (paused_prev_s + paused_now_s) / 60,
                "splits_file": args.splits or "data_generation/splits.csv",
                "params": fno.count_parameters(net), "results": results}
     with open(os.path.join(OUT, f"stage1_results{sfx}.json"), "w") as f:
@@ -275,6 +331,8 @@ def main() -> int:
             if col == 0:
                 axx.legend(fontsize=8); axx.set_ylabel("Cp")
     fig.tight_layout(); fig.savefig(os.path.join(OUT, f"stage1_examples{sfx}.png"), dpi=120); plt.close(fig)
+    if os.path.exists(state_path):
+        os.remove(state_path)   # finished: a later --resume must start fresh, not reload this
     print("done", flush=True)
     return 0
 
