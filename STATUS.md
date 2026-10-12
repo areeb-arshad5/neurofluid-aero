@@ -1,8 +1,8 @@
 # STATUS
 
-**Updated:** 2026-10-13 01:25 (night brief, items 1-2 done, item 3 starting)
-**Current state:** Reviewed overnight-2026-10-11 (7 commits; only .gitignore, CLAUDE.md, data_spec.md modified, 54 files added, nothing over 272 KB, no model/archive files, no secrets; 17+8+9 tests re-run and pass on the branch itself). Merged fast-forward into main and PUSHED: GitHub areeeb5/neurofluid-aero main = d55bafe (verified with ls-remote). Finer-grid work stays on branch finer-grid-128 (committed WIP, not merged, not pushed). Now on local branch stage1-all-families for the all-families retrain.
-**Push note:** plain `git push origin main` fails non-interactively because two GitHub accounts are saved (areeeb5, areeeb55); pushing with the areeeb5@ username in the URL works.
-**Next step:** retrain Stage 1 on ALL 15 families (RTX 4060, 2 CPU threads, pauses if free RAM < 3 GB), then redo the active-selection draft.
-**Blocked / waiting on Areeb:** nothing tonight. Morning: ANSYS session still not told the grid domain; decisions on the retrain design (see overnight/ALLFAMILIES notes once written).
-**Recommended model/effort:** Sonnet / medium for the run; Opus / high to judge the results.
+**Updated:** 2026-10-13 01:38 (night brief: items 1 and 2 DONE, item 3 queued behind a RAM rule)
+**Done:** (1) STATUS brought up to date. (2) overnight-2026-10-11 reviewed (7 commits, only .gitignore/CLAUDE.md/data_spec.md modified, nothing over 272 KB, no secrets, 17+8+9 tests pass on the branch itself), merged fast-forward into main and PUSHED: GitHub areeeb5/neurofluid-aero main = d55bafe, verified with ls-remote. Finer-grid work NOT merged: it is committed WIP on branch finer-grid-128, still paused as Areeb asked.
+**Item 3 (all-families retrain):** code ready on local branch stage1-all-families (new split splits_all_families.csv: all 15 families seen, 410/45/45 airfoils; 3 seeds; ensemble active-selection draft after). NOT STARTED YET: a launcher waits until >= 5.2 GB RAM is free (3 GB floor for Fluent + ~2.2 GB for the job); with Fluent running free RAM is ~3.9 GB. If it never frees tonight, rerun overnight/all_families/run_all_families.ps1 after Fluent ends.
+**Next step:** launcher starts seed 42 when RAM allows (log: overnight/all_families/launcher.log); then aggregate_allfamilies.py and active_selection_draft.py --ckpts ... on the new checkpoints.
+**For Areeb (morning):** questions and decisions in overnight/all_families/NOTES.md (5-fold alternative, RAM floor, plain git push needs the areeeb5@ URL, finer grid still paused, ANSYS session still not told the grid).
+**Recommended model/effort:** Sonnet / low to read NOTES.md; Opus / high to judge the retrain results.
