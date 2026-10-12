@@ -13,6 +13,7 @@ Written 13 Oct 2026 during the night brief, while Areeb was asleep. Nothing here
 ## What I found
 
 - **The RAM rule blocks the retrain while Fluent runs.** Free RAM is about 3.9 GB with Fluent and the Claude app open, and a CUDA training process needs roughly 2 GB. Starting it would push free RAM below the 3 GB floor, so the launcher waits for 5.2 GB free (3 GB floor + 2.2 GB for the job) and the in-training guard pauses below 3 GB. If Fluent runs all night, the retrain may not start until a Fluent job ends. Check `launcher.log` to see whether and when it did.
+- **Update 01:39: the retrain did start.** Free RAM rose to 5.6 GB at 01:37 and the launcher began, but its first launch failed on every attempt within a second: PowerShell's `>` and `Start-Process -Redirect*` treat `[` `]` as wildcards, and this repo sits under `...\[2] Porfolio\[4] Personal Projects\...`. Logs now go to `%TEMP%\neurofluid_allfam` and are copied here afterwards; relaunched 01:38 and training is running. The measured footprint of a training process is about 1.4 GB (free RAM went 5.6 to 4.2 GB), so the 5.2 GB start threshold was conservative; about 4.5 GB would have kept the same 3 GB floor.
 - **`git push origin main` fails non-interactively** because two GitHub accounts are saved (`areeeb5`, `areeeb55`) and git cannot choose without a prompt. Pushing to `https://areeeb5@github.com/areeeb5/neurofluid-aero.git` works. I used that once and did not change the stored remote.
 
 ## Questions for the morning

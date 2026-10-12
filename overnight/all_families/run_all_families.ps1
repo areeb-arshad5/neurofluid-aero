@@ -13,6 +13,12 @@ $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $out = Join-Path $root "overnight\all_families"
 $log = Join-Path $out "launcher.log"
 
+# PowerShell's `>` and Start-Process -Redirect* treat [ ] in a path as wildcards, and this
+# repo lives under "...\[2] Porfolio\[4] Personal Projects\...". Training logs therefore go to a
+# bracket-free temp folder and are copied next to the results afterwards.
+$logs = Join-Path $env:TEMP "neurofluid_allfam"
+New-Item -ItemType Directory -Force -Path $logs | Out-Null
+
 # 3 GB floor for the other jobs + about 2.2 GB for one CUDA training process.
 $StartMinGB = 5.2
 
@@ -36,9 +42,13 @@ foreach ($seed in 42, 43, 44) {
         & $py -u (Join-Path $root "model\train_stage1.py") --seed $seed --tag "allfam_s$seed" `
             --splits (Join-Path $root "data_generation\splits_all_families.csv") `
             --out_dir $out --threads 2 --min_free_gb 3 --epochs 400 --time_cap_min 40 `
-            > (Join-Path $out "train_allfam_s$seed.log") 2> (Join-Path $out "train_allfam_s$seed.err")
+            > (Join-Path $logs "train_allfam_s$seed.log") 2> (Join-Path $logs "train_allfam_s$seed.err")
+        foreach ($ext in "log", "err") {
+            $src = Join-Path $logs "train_allfam_s$seed.$ext"
+            if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination (Join-Path $out "train_allfam_s$seed.$ext") -Force }
+        }
         if (Test-Path -LiteralPath $json) { Log "seed $seed finished (attempt $attempt)"; break }
-        Log "seed $seed attempt $attempt FAILED (exit $LASTEXITCODE), see train_allfam_s$seed.err"
+        Log "seed $seed attempt $attempt FAILED (exit $LASTEXITCODE), see $logs\train_allfam_s$seed.err"
     }
 }
 Log "launcher finished"
