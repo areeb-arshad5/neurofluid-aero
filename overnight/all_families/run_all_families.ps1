@@ -36,6 +36,27 @@ function CopyLogs($seed) {
     }
 }
 
+# After each finished seed: aggregate what exists and redo the active-selection draft with
+# an ensemble of the checkpoints finished so far (cheap, about a minute).
+function PostProcess {
+    $cks = @()
+    foreach ($s in 42, 43, 44) {
+        $c = Join-Path $out "checkpoints\stage1_best_allfam_s$s.pt"
+        $j = Join-Path $out "stage1_results_allfam_s$s.json"
+        if ((Test-Path -LiteralPath $c) -and (Test-Path -LiteralPath $j)) { $cks += $c }
+    }
+    if ($cks.Count -eq 0) { return }
+    while ((FreeGB) -lt 4.4) { Start-Sleep -Seconds 30 }
+    & $py (Join-Path $root "model\aggregate_allfamilies.py") *> (Join-Path $logs "post_aggregate.log")
+    & $py (Join-Path $root "model\active_selection_draft.py") --ckpts $cks `
+        --splits (Join-Path $root "data_generation\splits_all_families.csv") `
+        --out_dir $out --name "active_selection_allfamilies" *> (Join-Path $logs "post_active.log")
+    foreach ($n in "post_aggregate.log", "post_active.log") {
+        if (Test-Path -LiteralPath (Join-Path $logs $n)) { Copy-Item -LiteralPath (Join-Path $logs $n) -Destination (Join-Path $out $n) -Force }
+    }
+    Log "post-processing done with $($cks.Count) checkpoint(s): ALLFAMILIES_REPORT.md and active_selection_allfamilies.md updated"
+}
+
 Log "launcher started (python $py)"
 foreach ($seed in 42, 43, 44) {
     $json = Join-Path $out "stage1_results_allfam_s$seed.json"
@@ -57,7 +78,7 @@ foreach ($seed in 42, 43, 44) {
         $code = $LASTEXITCODE
         CopyLogs $seed
 
-        if (Test-Path -LiteralPath $json) { Log "seed $seed finished"; break }
+        if (Test-Path -LiteralPath $json) { Log "seed $seed finished"; PostProcess; break }
         if ($code -eq 75) { Log "seed $seed released its RAM (low-RAM pause), will resume when RAM allows"; continue }
         $failures++
         Log "seed $seed FAILED (exit $code), failure $failures of $MaxFailures, see $logs\train_allfam_s$seed.err"

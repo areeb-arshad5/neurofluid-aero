@@ -1,0 +1,59 @@
+10-13 01:32:30  launcher started (python C:\Users\PC\AppData\Local\Python\bin\python.exe)
+10-13 01:32:30  seed 42 waiting: free RAM 3.86 GB < 5.2 GB start threshold
+10-13 01:37:31  seed 42 starting (free RAM 5.63 GB, waited 5 min)
+10-13 01:37:31  seed 42 attempt 1 FAILED (exit ), see train_allfam_s42.err
+10-13 01:37:31  seed 42 attempt 2 FAILED (exit ), see train_allfam_s42.err
+10-13 01:37:32  seed 43 starting (free RAM 5.63 GB, waited 0 min)
+10-13 01:37:32  seed 43 attempt 1 FAILED (exit ), see train_allfam_s43.err
+10-13 01:37:32  seed 43 attempt 2 FAILED (exit ), see train_allfam_s43.err
+10-13 01:37:32  seed 44 starting (free RAM 5.63 GB, waited 0 min)
+10-13 01:37:32  seed 44 attempt 1 FAILED (exit ), see train_allfam_s44.err
+10-13 01:37:32  seed 44 attempt 2 FAILED (exit ), see train_allfam_s44.err
+10-13 01:37:32  launcher finished
+10-13 01:38:50  --- relaunch: the first launch failed on every attempt because PowerShell redirection cannot write into a path containing [ ]; logs now go to %TEMP%\neurofluid_allfam
+10-13 01:38:51  launcher started (python C:\Users\PC\AppData\Local\Python\bin\python.exe)
+10-13 01:38:51  seed 42 starting (free RAM 5.6 GB, waited 0 min)
+10-13 01:40:59  --- stopped by hand: Fluent fine-mesh run took RAM below 3 GB and the paused trainer was holding 1.3 GB; adding save-and-exit resume support
+10-13 01:43:08  resume test waiting: free RAM 3.17 GB < 5 GB
+10-13 01:53:11  resume test waiting: free RAM 3.23 GB < 5 GB
+10-13 01:54:41  resume test starting (free RAM 5.82 GB)
+10-13 01:55:48  resume test PASSED; starting the retrain launcher
+10-13 01:55:48  launcher started (python C:\Users\PC\AppData\Local\Python\bin\python.exe)
+10-13 01:55:49  seed 42 starting or resuming (free RAM 5.54 GB, waited 0 min)
+10-13 01:59:20  seed 42 released its RAM (low-RAM pause), will resume when RAM allows
+10-13 01:59:21  seed 42 waiting: free RAM 3.68 GB < 5 GB start threshold
+10-13 02:04:22  seed 42 starting or resuming (free RAM 5.67 GB, waited 5 min)
+10-13 02:07:57  seed 42 released its RAM (low-RAM pause), will resume when RAM allows
+10-13 02:07:58  seed 42 waiting: free RAM 3.15 GB < 5 GB start threshold
+10-13 02:18:00  seed 42 waiting: free RAM 4.32 GB < 5 GB start threshold
+10-13 02:28:02  seed 42 waiting: free RAM 4.33 GB < 5 GB start threshold
+10-13 02:38:05  seed 42 waiting: free RAM 4.14 GB < 5 GB start threshold
+10-13 02:48:07  seed 42 waiting: free RAM 4.27 GB < 5 GB start threshold
+10-13 02:58:09  seed 42 waiting: free RAM 4.36 GB < 5 GB start threshold
+10-13 03:08:11  seed 42 waiting: free RAM 4.33 GB < 5 GB start threshold
+10-13 03:18:14  seed 42 waiting: free RAM 4.34 GB < 5 GB start threshold
+10-13 03:28:16  seed 42 waiting: free RAM 4.35 GB < 5 GB start threshold
+10-13 03:38:18  seed 42 waiting: free RAM 4.34 GB < 5 GB start threshold
+10-13 03:48:20  seed 42 waiting: free RAM 4.35 GB < 5 GB start threshold
+10-13 03:58:23  seed 42 waiting: free RAM 4.35 GB < 5 GB start threshold
+10-13 04:08:25  seed 42 waiting: free RAM 4.34 GB < 5 GB start threshold
+10-13 04:18:27  seed 42 waiting: free RAM 4.28 GB < 5 GB start threshold
+10-13 04:28:29  seed 42 waiting: free RAM 4.28 GB < 5 GB start threshold
+10-13 04:38:32  seed 42 waiting: free RAM 4.27 GB < 5 GB start threshold
+10-13 04:48:34  seed 42 waiting: free RAM 4.3 GB < 5 GB start threshold
+10-13 04:58:36  seed 42 waiting: free RAM 4.24 GB < 5 GB start threshold
+10-13 05:08:38  seed 42 waiting: free RAM 4.28 GB < 5 GB start threshold
+10-13 05:18:41  seed 42 waiting: free RAM 4.29 GB < 5 GB start threshold
+10-13 05:28:43  seed 42 waiting: free RAM 4.13 GB < 5 GB start threshold
+10-13 05:38:45  seed 42 waiting: free RAM 4.12 GB < 5 GB start threshold
+10-13 05:48:47  seed 42 waiting: free RAM 4.21 GB < 5 GB start threshold
+10-13 05:58:50  seed 42 waiting: free RAM 4.22 GB < 5 GB start threshold
+10-13 06:08:52  seed 42 waiting: free RAM 4.2 GB < 5 GB start threshold
+10-13 06:18:54  seed 42 waiting: free RAM 4.14 GB < 5 GB start threshold
+10-13 06:28:56  seed 42 waiting: free RAM 4.16 GB < 5 GB start threshold
+10-13 06:38:59  seed 42 waiting: free RAM 4.14 GB < 5 GB start threshold
+10-13 06:49:01  seed 42 waiting: free RAM 4.11 GB < 5 GB start threshold
+10-13 06:59:03  seed 42 waiting: free RAM 4.11 GB < 5 GB start threshold
+10-13 07:05:31  --- relaunch (07:0x): launcher now also post-processes after each finished seed. Reason it is still waiting: Bullet's hung Fluent (fl2520 + 4 fl_mpi2520, ~1.4 GB, 0% CPU since ~02:05) keeps free RAM at ~4.1 GB; killing it would free enough
+10-13 07:05:32  launcher started (python C:\Users\PC\AppData\Local\Python\bin\python.exe)
+10-13 07:05:32  seed 42 waiting: free RAM 3.93 GB < 5 GB start threshold
